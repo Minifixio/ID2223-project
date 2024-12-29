@@ -1,7 +1,6 @@
 # ID2223 - Final project
 
 ## Project Architecture
-
 ### **1. Data Ingestion & Pre-filling**
 - **Spotify Profile Scraping:**
     - **Goal:** Gather a large volume of Spotify user IDs or profile URLs to populate the initial database.
@@ -60,3 +59,17 @@
 The architecture workflow is illustrated in the diagram below:  
 [![Project Architecture](./project-architecture.png)](./project-architecture.png)
 
+
+## Roadmap :
+See details [here](./roadmap.md)
+
+- Task 1: _Not done_
+- Task 2: _Not done_
+- Task 3: _Not done_
+
+## Useful links
+- https://www.hopsworks.ai/dictionary/two-tower-embedding-model
+- https://www.hopsworks.ai/news/making-hopsworks-a-more-modular-platform-with-delta-lake-support
+- https://github.com/decodingml/personalized-recommender-course/tree/main
+- https://developer.spotify.com/documentation/web-api
+- https://cloud.google.com/blog/products/ai-machine-learning/scaling-deep-retrieval-tensorflow-two-towers-architecture
