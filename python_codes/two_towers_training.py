@@ -6,6 +6,15 @@ import random
 import numpy as np
 import hopsworks
 
+with open('../secrets/hopsworks_api_key.txt', 'r') as file:
+    HOPSWORKS_API_KEY = file.readline().strip()
+
+with open('../secrets/spotify_client_id.txt', 'r') as file:
+    SPOTIFY_CLIENT_ID = file.readline().strip()
+
+with open('../secrets/spotify_client_secret.txt', 'r') as file:
+    SPOTIFY_CLIENT_SECRET = file.readline().strip()
+
 project = hopsworks.login(api_key_value=HOPSWORKS_API_KEY)
 fs = project.get_feature_store() 
 

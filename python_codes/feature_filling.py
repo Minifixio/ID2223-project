@@ -10,10 +10,14 @@ import hopsworks
 import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
 
-SPOTIFY_CLIENT_ID = "b810c6ca8b2743daa8d3a3e355b7299b"
-SPOTIFY_CLIENT_SECRET = "b569748b5ff041f097402a603428fb3d"
-SPOTIFY_BASE_URL = "https://api.spotify.com/v1/"
-HOPSWORKS_API_KEY = "Tm6d6Kium30I2GOm.KmRBKltxfV2ETd9rgONdjvDCsnMQ8ENTyWTCUghbILYycU4fcKhYTC7VB9nx9PQ0"
+with open('../secrets/hopsworks_api_key.txt', 'r') as file:
+    HOPSWORKS_API_KEY = file.readline().strip()
+
+with open('../secrets/spotify_client_id.txt', 'r') as file:
+    SPOTIFY_CLIENT_ID = file.readline().strip()
+
+with open('../secrets/spotify_client_secret.txt', 'r') as file:
+    SPOTIFY_CLIENT_SECRET = file.readline().strip()
 
 client_credentials_manager = SpotifyClientCredentials(client_id=SPOTIFY_CLIENT_ID, client_secret=SPOTIFY_CLIENT_SECRET)
 sp = spotipy.Spotify(client_credentials_manager=client_credentials_manager)
