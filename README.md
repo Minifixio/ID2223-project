@@ -10,7 +10,7 @@
         - Extract genres using artist data ([Get Artist API](https://developer.spotify.com/documentation/web-api/reference/get-an-artist)).
 
 - **Feature Engineering:**
-    - **Embedding Creation:** Use the *User Profile Embedding* ([see this](./user_profile_embedding.md)) process based on a two-tower neural network architecture.
+    - **Embedding Creation:** Use the *User Profile Embedding* ([see this](./documentation/user_profile_embedding.md)) process based on a two-tower neural network architecture.
     - **Storage:** Store computed embeddings and metadata in **Hopsworks Feature Store** (or **Hopsworks Vector DB**) for efficient management.
 
 
@@ -57,11 +57,11 @@
 
 ### **Diagram Reference**
 The architecture workflow is illustrated in the diagram below:  
-[![Project Architecture](./project-architecture.png)](./project-architecture.png)
+[![Project Architecture](./documentation/project-architecture.png)](./documentation/project-architecture.png)
 
 
 ## Roadmap :
-See details [here](./roadmap.md)
+See details [here](./documentation/roadmap.md)
 
 - Task 1: _Not done_
 - Task 2: _Not done_
