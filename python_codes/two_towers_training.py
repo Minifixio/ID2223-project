@@ -109,10 +109,10 @@ history = model.fit(
 )
 
 mr = project.get_model_registry()
-model.save("two_tower_model")
+model.save("two_tower_model.keras")
 
 # Create a new model version
-model_dir = "two_tower_model"
+model_dir = "two_tower_model.keras"
 model_name = "two_tower_recommender"
 
 model_registry = mr.python.create_model(

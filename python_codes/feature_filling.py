@@ -30,13 +30,13 @@ def normalize_dates(release_dates):
     return np.mean(dates) / datetime.now().timestamp()
 
 # Generate embedding for a user's profile
-def generate_user_embedding(user_playlists, genre_embedding_model, artist_embedding_model, top_artist_count):
+def generate_user_embedding(user_playlists, genre_embedding_model, artist_embedding_model, top_artist_count, playlists_count):
     all_genres = []
     all_artists = []
     all_release_years = []
     playlist_features = []
 
-    for playlist in user_playlists[:10]:  # Limit to first 10 playlists
+    for playlist in user_playlists[:playlists_count]:  # Limit to first 10 playlists
         playlist_name = playlist.get("name", "Unknown")
         playlist_id = playlist["id"]
 
@@ -109,8 +109,9 @@ def generate_user_embedding(user_playlists, genre_embedding_model, artist_embedd
     # Return individual embeddings
     return genre_embedding, artist_embedding, playlist_embedding, release_year_embedding
 
-profiles_count = 10  # Number of profiles to process
+profiles_count = 50  # Number of profiles to process
 top_artist_count = 5  # Number of top artists to embed
+playlists_count = 10  # Number of playlists to consider per user
 
 # Load dataset
 dataset = load_dataset("erenfazlioglu/spotifyuserids")
@@ -148,7 +149,7 @@ for spotify_id in rows["spotify_id"]:
 
         # Generate individual embeddings
         genre_embedding, artist_embedding, playlist_embedding, release_year_embedding = generate_user_embedding(
-            playlists, genre_embedding_model, artist_embedding_model, top_artist_count
+            playlists, genre_embedding_model, artist_embedding_model, top_artist_count, playlists_count
         )
 
         # Append embeddings to list as a dictionary
