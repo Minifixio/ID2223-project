@@ -13,3 +13,10 @@
 
 - **Task 5:** Develop an UI where a user can enter its profile URL, trigger the recommendation (Task 3 pipeline), and get the results of the most similar profiles (EXTRA: as well as some information like the music genre they match the most, etc...).
 
+- **Task 6:** Automate Weekly Model Training and Evaluation. Set up an automatic pipeline for model retraining and evaluation every week using GitHub Actions.
+    - ***Sub-task 1:*** Create a GitHub Action workflow that triggers the model retraining pipeline once a week.
+    - ***Sub-task 2:*** Implement model performance evaluation (e.g., accuracy, similarity metrics) after each retraining, and log results for monitoring.
+
+- **Task 7:** Fine-tune the Two-Tower Architecture. Improve the Two-Tower recommender model's performance.
+    - ***Sub-task 1:*** Analyze current model performance and identify areas for improvement (e.g., embedding strategy, network layers).
+    - ***Sub-task 2:*** Fine-tune hyperparameters and model architecture using cross-validation and retrain the model for improved accuracy.

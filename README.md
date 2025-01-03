@@ -1,13 +1,19 @@
 # ID2223 - Final project
 
 ## Project Architecture
-### **1. Data Ingestion & Pre-filling**
-- **Spotify Profile Scraping:**
-    - **Goal:** Gather a large volume of Spotify user IDs or profile URLs to populate the initial database.
-    - **Scraping Process:** Use Spotify API to retrieve public playlists for each user ID or profile URL, ensuring compliance with Spotify's terms of service.
-    - **Track Metadata Extraction:**
-        - Extract track-level audio features using the [Get Audio Features API](https://developer.spotify.com/documentation/web-api/reference/get-audio-features).
-        - Extract genres using artist data ([Get Artist API](https://developer.spotify.com/documentation/web-api/reference/get-an-artist)).
+### **1. Data Ingestion & Feature Extraction**
+- **Spotify Profile Scraping**:
+    - **Goal:** Collect Spotify user profiles using the API, ensuring compliance with Spotify’s terms.
+    - **Feature Extraction**: 
+        - **Genres**: Extracted from artist data, encoded with a SentenceTransformer, and averaged across playlists.
+        - **Artists**: Top `N` most frequent artists are encoded and averaged.
+        - **Release Years**: Average release year of tracks.
+        - **Playlist Features**: 
+            - Number of tracks
+            - Average popularity
+            - Explicitness ratio
+        - **Playlist Embedding**: Weighted genre embeddings based on playlist size.
+    - **Final User Embedding**: Combines **Genres**, **Artists**, **Playlists**, and **Release Years** into a single user representation.
 
 - **Feature Engineering:**
     - **Embedding Creation:** Use the *User Profile Embedding* ([see this](./documentation/user_profile_embedding.md)) process based on a two-tower neural network architecture.
@@ -63,9 +69,14 @@ The architecture workflow is illustrated in the diagram below:
 ## Roadmap :
 See details [here](./documentation/roadmap.md)
 
-- Task 1: _Not done_
-- Task 2: _Not done_
-- Task 3: _Not done_
+- Task 1: **done**
+- Task 2: **done**
+- Task 3: **done**
+- Task 4: **done**
+- Task 5: **done**
+- Task 6: _Not done_
+- Task 7: _Not done_
+
 
 ## Useful links
 - https://www.hopsworks.ai/dictionary/two-tower-embedding-model
@@ -73,3 +84,5 @@ See details [here](./documentation/roadmap.md)
 - https://github.com/decodingml/personalized-recommender-course/tree/main
 - https://developer.spotify.com/documentation/web-api
 - https://cloud.google.com/blog/products/ai-machine-learning/scaling-deep-retrieval-tensorflow-two-towers-architecture
+- https://medium.com/codex/similarity-search-of-spotify-songs-using-gcp-vector-search-vertex-ai-python-sdk-in-15-minutes-621573cd7b19
+- https://slides.com/kirillkasjanov/recommender-systems#/3/6

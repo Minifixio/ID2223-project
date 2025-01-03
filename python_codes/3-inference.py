@@ -37,10 +37,6 @@ with open('../secrets/spotify_client_secret.txt', 'r') as file:
 client_credentials_manager = SpotifyClientCredentials(client_id=SPOTIFY_CLIENT_ID, client_secret=SPOTIFY_CLIENT_SECRET)
 sp = spotipy.Spotify(client_credentials_manager=client_credentials_manager)
 
-# Log spotify Bearer Token
-print(client_credentials_manager.get_access_token())
-
-
 # In[46]:
 
 

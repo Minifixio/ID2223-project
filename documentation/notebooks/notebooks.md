@@ -22,3 +22,12 @@
     2. **Compute Embedding**: Generate the user embedding using the same method as Notebook 1.
     3. **Retrieve Matches**: Use the two-tower model to find and rank similar users from the feature store.
     4. **Update Feature Store**: Add the new user embedding for future use.
+
+### Notebook 4 - Gradio UI for User Recommendations
+- **Purpose**: Create an interactive Gradio UI to recommend similar Spotify user profiles based on user input.
+- **Steps**:
+    1. **User Input**: Allow users to input their Spotify profile URL or ID.
+    2. **Embedding Generation**: Generate the user's embedding by applying the same method from Notebook 1.
+    3. **Model Inference**: Use the two-tower model (from Notebook 2) to retrieve the most similar users from the feature store.
+    4. **Display Results**: Show the top similar users, along with their genres, playlists, and other relevant details.
+    5. **Deploy to HuggingFace**: Package the Gradio interface and deploy it to HuggingFace for easy access and use.
