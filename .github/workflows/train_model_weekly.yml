@@ -1,0 +1,36 @@
+name: train_model_weekly
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * 0'
+
+jobs:
+  schedule_pipelines:
+    runs-on: ubuntu-latest
+
+    permissions:
+      pages: write
+      contents: write
+
+    steps:
+      - name: checkout repo content
+        uses: actions/checkout@v4
+
+      - name: setup python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+      - name: install python packages
+        run: |
+          cd notebooks/
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: execute python workflows from bash script
+        env:
+          HOPSWORKS_API_KEY: ${{ secrets.HOPSWORKS_API_KEY }}
+        run: |
+          cd notebooks/ch03
+          jupyter nbconvert --to notebook --execute 2-retrieval_model_training.ipynb
