@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[51]:
+# In[78]:
 
 
 from sklearn.preprocessing import normalize
@@ -11,23 +11,27 @@ from sklearn.metrics.pairwise import cosine_similarity
 import random
 import numpy as np
 import hopsworks
+import os
 
 
-# In[52]:
+# In[81]:
 
 
-with open('../secrets/hopsworks_api_key.txt', 'r') as file:
-    HOPSWORKS_API_KEY = file.readline().strip()
+if os.getenv('HOPSWORKS_API_KEY') is not None:
+    HOPSWORKS_API_KEY = os.getenv('HOPSWORKS_API_KEY')
+else:
+    with open('../secrets/hopsworks_api_key.txt', 'r') as file:
+        HOPSWORKS_API_KEY = file.readline().strip()
 
 
-# In[53]:
+# In[63]:
 
 
 project = hopsworks.login(api_key_value=HOPSWORKS_API_KEY)
 fs = project.get_feature_store() 
 
 
-# In[54]:
+# In[67]:
 
 
 user_embeddings_fg = fs.get_feature_group(
@@ -36,10 +40,11 @@ user_embeddings_fg = fs.get_feature_group(
 )
 
 user_embeddings_df = user_embeddings_fg.read()
+print(f"A total of {len(user_embeddings_df)} user embeddings are available.")
 user_embeddings_df.head()
 
 
-# In[55]:
+# In[68]:
 
 
 user_embeddings_df['full_embedding'] = user_embeddings_df.apply(
@@ -50,10 +55,10 @@ user_embeddings_df['full_embedding'] = user_embeddings_df.apply(
 )
 normalized_embeddings = normalize(np.array(user_embeddings_df['full_embedding'].tolist()))
 user_embeddings_df['normalized_embedding'] = normalized_embeddings.tolist()
-user_embeddings_df
+user_embeddings_df.head()
 
 
-# In[56]:
+# In[69]:
 
 
 def build_user_tower(input_dim, embedding_dim=128):
@@ -73,7 +78,7 @@ def build_candidate_tower(input_dim, embedding_dim=128):
     return Model(inputs, candidate_embedding, name="CandidateTower")
 
 
-# In[57]:
+# In[70]:
 
 
 # Instantiate towers
@@ -98,7 +103,7 @@ model.compile(
 )
 
 
-# In[58]:
+# In[71]:
 
 
 def generate_pairs(embeddings, similarity_threshold=0.8, negative_ratio=1):
@@ -126,7 +131,7 @@ def generate_pairs(embeddings, similarity_threshold=0.8, negative_ratio=1):
     return np.array(pairs), np.array(labels)
 
 
-# In[59]:
+# In[72]:
 
 
 # Generate training data
@@ -143,11 +148,11 @@ history = model.fit(
 )
 
 
-# In[60]:
+# In[77]:
 
 
 mr = project.get_model_registry()
-model.save("two_tower_model.keras")
+model.save("two_tower_model.keras", save_format="tf")
 
 # Create a new model version
 model_dir = "two_tower_model.keras"

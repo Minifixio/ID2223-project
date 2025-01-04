@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[19]:
+# In[46]:
 
 
 import os
@@ -19,7 +19,7 @@ from sentence_transformers import SentenceTransformer
 import pickle
 
 
-# In[20]:
+# In[47]:
 
 
 with open('../secrets/hopsworks_api_key.txt', 'r') as file:
@@ -32,20 +32,20 @@ with open('../secrets/spotify_client_secret.txt', 'r') as file:
     SPOTIFY_CLIENT_SECRET = file.readline().strip()
 
 
-# In[21]:
+# In[48]:
 
 
 client_credentials_manager = SpotifyClientCredentials(client_id=SPOTIFY_CLIENT_ID, client_secret=SPOTIFY_CLIENT_SECRET)
 sp = spotipy.Spotify(client_credentials_manager=client_credentials_manager)
 
 
-# In[22]:
+# In[49]:
 
 
 project = hopsworks.login(api_key_value=HOPSWORKS_API_KEY)
 
 
-# In[23]:
+# In[50]:
 
 
 def get_embeddings(genres, artists, model):
@@ -182,20 +182,21 @@ def generate_user_embedding(user_playlists, transformer_model, top_artist_count,
     return genre_embedding, artist_embedding, playlist_embedding, release_year_embedding
 
 
-# In[41]:
+# In[53]:
 
 
-profiles_count = 50  # Number of profiles to process
+profiles_offset = 50  # Offset to start processing profiles
+profiles_count = 100  # Number of profiles to process
 top_artist_count = 5  # Number of top artists to embed
 playlists_count = 5  # Number of playlists to consider per user
 
 # Load dataset
 dataset = load_dataset("erenfazlioglu/spotifyuserids")
 print(f"Loaded dataset with {len(dataset['train'])} profiles")
-rows = dataset["train"][:profiles_count]
+rows = dataset["train"][profiles_offset:profiles_offset + profiles_count]
 
 
-# In[42]:
+# In[54]:
 
 
 transformer_model = SentenceTransformer('paraphrase-MiniLM-L6-v2')  # You can replace this with another model if needed
@@ -233,7 +234,7 @@ print(f"Embeddings for {len(embeddings)} users:")
 embeddings
 
 
-# In[43]:
+# In[55]:
 
 
 df_embeddings = pd.DataFrame(embeddings)
@@ -242,13 +243,13 @@ print(f"Embeddings shape: {df_embeddings.shape}")
 df_embeddings.head()
 
 
-# In[44]:
+# In[56]:
 
 
 fs = project.get_feature_store()
 
 
-# In[45]:
+# In[57]:
 
 
 feature_store = project.get_feature_store()
