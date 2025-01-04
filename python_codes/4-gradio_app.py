@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[116]:
+# In[1]:
 
 
 import gradio as gr
@@ -16,9 +16,10 @@ from sklearn.preprocessing import normalize
 from sklearn.metrics.pairwise import cosine_similarity
 from collections import Counter
 from sentence_transformers import SentenceTransformer
+from tensorflow.keras.models import Model
 
 
-# In[117]:
+# In[2]:
 
 
 # Load credentials
@@ -32,14 +33,14 @@ with open('../secrets/spotify_client_secret.txt', 'r') as file:
     SPOTIFY_CLIENT_SECRET = file.readline().strip()
 
 
-# In[118]:
+# In[3]:
 
 
 client_credentials_manager = SpotifyClientCredentials(client_id=SPOTIFY_CLIENT_ID, client_secret=SPOTIFY_CLIENT_SECRET)
 sp = spotipy.Spotify(client_credentials_manager=client_credentials_manager)
 
 
-# In[119]:
+# In[4]:
 
 
 # Connect to Hopsworks
@@ -47,23 +48,26 @@ project = hopsworks.login(api_key_value=HOPSWORKS_API_KEY)
 fs = project.get_feature_store()
 
 
-# In[120]:
+# In[5]:
 
 
 # Retrieve the Keras model from the model registry
 mr = project.get_model_registry()
 model_registry = mr.get_model("two_tower_recommender", version=1)
 model_file_path = model_registry.download()
-model = tf.keras.models.load_model(model_file_path + '/two_tower_model.keras')
+model = tf.keras.models.load_model(
+    model_file_path + '/two_tower_model.keras',
+    custom_objects={"Model": Model}
+)
 
 
-# In[121]:
+# In[6]:
 
 
 transformer_model = SentenceTransformer('paraphrase-MiniLM-L6-v2')  # This can be replaced if needed
 
 
-# In[122]:
+# In[7]:
 
 
 def generate_user_embedding(user_playlists, transformer_model, top_artist_count, playlists_count):
@@ -179,7 +183,7 @@ def generate_user_embedding(user_playlists, transformer_model, top_artist_count,
     return genre_embedding, artist_embedding, playlist_embedding, release_year_embedding
 
 
-# In[123]:
+# In[8]:
 
 
 def extract_user_id(spotify_url):
@@ -190,7 +194,7 @@ def extract_user_id(spotify_url):
     return None
 
 
-# In[127]:
+# In[ ]:
 
 
 def recommend_users(spotify_url, top_artist_count, playlists_count, progress=gr.Progress(track_tqdm=True)):
@@ -218,9 +222,29 @@ def recommend_users(spotify_url, top_artist_count, playlists_count, progress=gr.
         user_embedding_concat = np.concatenate([genre_embedding, artist_embedding, playlist_embedding, release_year_embedding])
         user_embedding_normalized = normalize(user_embedding_concat.reshape(1, -1))
 
+        # Add the user's embedding to Hopsworks
+        print("Adding the user's embedding to Hopsworks...")
+        user_embedding_dict = {
+            "user_id": user_id,
+            "genre_embedding": genre_embedding.tolist(),
+            "artist_embedding": artist_embedding.tolist(),
+            "playlist_embedding": playlist_embedding.tolist(),
+            "release_year_embedding": release_year_embedding.tolist()
+        }
+        user_embedding_df = pd.DataFrame([user_embedding_dict])  # Create a DataFrame with a single row
+
+        # Insert into the feature store
+        feature_store = project.get_feature_store()
+        feature_group = feature_store.get_feature_group(name="spotify_user_embeddings", version=2)
+        feature_group.insert(user_embedding_df)
+        print(f"User embedding for {user_id} added to Hopsworks successfully.")
+
         # Get all user embeddings from the database (assuming these are already stored in the feature store)
         user_embeddings_fg = fs.get_feature_group(name="spotify_user_embeddings", version=2)
         all_user_embeddings = user_embeddings_fg.read()
+
+        # Exclude the current user from the dataset
+        all_user_embeddings = all_user_embeddings[all_user_embeddings["user_id"] != user_id]
 
         all_user_embeddings['full_embedding'] = all_user_embeddings.apply(
             lambda row: np.concatenate(

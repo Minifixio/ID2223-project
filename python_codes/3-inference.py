@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[43]:
+# In[63]:
 
 
 import numpy as np
@@ -15,9 +15,10 @@ from sklearn.metrics.pairwise import cosine_similarity
 from collections import Counter
 import time
 from sentence_transformers import SentenceTransformer
+from tensorflow.keras.models import Model
 
 
-# In[44]:
+# In[64]:
 
 
 # Load credentials
@@ -31,13 +32,14 @@ with open('../secrets/spotify_client_secret.txt', 'r') as file:
     SPOTIFY_CLIENT_SECRET = file.readline().strip()
 
 
-# In[45]:
+# In[65]:
 
 
 client_credentials_manager = SpotifyClientCredentials(client_id=SPOTIFY_CLIENT_ID, client_secret=SPOTIFY_CLIENT_SECRET)
 sp = spotipy.Spotify(client_credentials_manager=client_credentials_manager)
 
-# In[46]:
+
+# In[66]:
 
 
 # Connect to the project and feature store
@@ -45,7 +47,7 @@ project = hopsworks.login(api_key_value=HOPSWORKS_API_KEY)
 fs = project.get_feature_store()
 
 
-# In[47]:
+# In[67]:
 
 
 # Get the model registry
@@ -54,12 +56,15 @@ mr = project.get_model_registry()
 # Retrieve the Keras model from the model registry
 model_registry = mr.get_model("two_tower_recommender", version=1)
 model_file_path = model_registry.download()
-model = tf.keras.models.load_model(model_file_path + '/two_tower_model.keras')
+model = tf.keras.models.load_model(
+    model_file_path + '/two_tower_model.keras',
+    custom_objects={"Model": Model}
+)
 
 print("Model loaded successfully!")
 
 
-# In[48]:
+# In[68]:
 
 
 def get_embeddings(genres, artists, model):
@@ -79,7 +84,7 @@ def get_embeddings(genres, artists, model):
     return genre_embeddings, artist_embeddings
 
 
-# In[ ]:
+# In[69]:
 
 
 def generate_user_embedding(user_playlists, transformer_model, top_artist_count, playlists_count):
@@ -220,6 +225,9 @@ def get_best_matching_user(user_id, transformer_model, top_artist_count, playlis
     # Get all user embeddings from the database (assuming these are already stored in the feature store)
     user_embeddings_fg = fs.get_feature_group(name="spotify_user_embeddings", version=2)
     all_user_embeddings = user_embeddings_fg.read()
+
+    # Exclude the current user from the dataset
+    all_user_embeddings = all_user_embeddings[all_user_embeddings["user_id"] != user_id]
 
     all_user_embeddings['full_embedding'] = all_user_embeddings.apply(
         lambda row: np.concatenate(
