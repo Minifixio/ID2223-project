@@ -32,5 +32,5 @@ jobs:
         env:
           HOPSWORKS_API_KEY: ${{ secrets.HOPSWORKS_API_KEY }}
         run: |
-          cd notebooks/ch03
+          cd notebooks
           jupyter nbconvert --to notebook --execute 2-retrieval_model_training.ipynb
