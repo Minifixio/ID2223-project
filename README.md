@@ -162,3 +162,14 @@ This allows users to easily enter their profile URL, and in return, they receive
 - **Two-Tower Model**: Uses a deep learning architecture to compute similarities between users and recommend the most relevant profiles based on cosine similarity.
 - **Automated Retraining**: Model is retrained automatically every week using GitHub Actions to incorporate the latest user data into the model.
 - **Interactive Web Interface**: Gradio web app provides an intuitive, user-friendly interface for making personalized Spotify recommendations.
+
+# References
+- https://slides.com/kirillkasjanov/recommender-systems#/3/6
+- https://www.youtube.com/watch?v=9vBRjGgdyTY&t=834s
+- https://www.youtube.com/watch?v=o-pZk5R0TZg
+- https://www.youtube.com/watch?v=7_E4wnZGJKo
+- https://medium.com/codex/similarity-search-of-spotify-songs-using-gcp-vector-search-vertex-ai-python-sdk-in-15-minutes-621573cd7b19
+- https://www.hopsworks.ai/dictionary/two-tower-embedding-model
+- https://cloud.google.com/blog/products/ai-machine-learning/scaling-deep-retrieval-tensorflow-two-towers-architecture
+- https://github.com/decodingml/personalized-recommender-course
+- https://github.com/kirajano/two_tower_recommenders
