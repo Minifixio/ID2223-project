@@ -1,18 +1,19 @@
 # Project Overview: Dynamic Spotify User Recommender System
 
-This project demonstrates a **dynamic recommendation system** for Spotify users, built using a **two-tower deep learning architecture**, **Hopsworks Feature Store**, and an interactive **Gradio web application**. It incorporates various advanced machine learning and data engineering techniques to deliver personalized user recommendations, while continuously updating the recommendation model and database with new data. Below is an overview of the project's key components, workflows, and code snippets.
+This project demonstrates a **dynamic recommendation system** for Spotify users, built using a **multi-embedding deep learning architecture (Torch-based)**, **Hopsworks Feature Store**, and an interactive **Gradio web application**. The project uses advanced machine learning and data engineering techniques to deliver personalized user recommendations. The recommendation model and database are continuously updated with new data to ensure adaptability and improved personalization.
 
-## Project architecture diagram
+## Project Architecture Diagram
 [![Project Architecture](./documentation/project-architecture-v2.png)](./documentation/project-architecture-v2.png)
 
-## Project parts
+## Key Components
 
 ### 1. **Dataset and Feature Store Integration**
 
-The system is powered by a **dataset of Spotify profile IDs**, sourced from **Hugging Face**. This dataset contains many different users' profile data, which is processed to generate user embeddings. These embeddings are stored in the **Feature Store** of **Hopsworks**, a centralized data storage and feature management system that serves as the foundation of our recommendation engine. The user embeddings include data such as user preferences across genres, artists, playlists, and release years.
+The recommendation system uses a **dataset of Spotify profile IDs** sourced from **Hugging Face**. This dataset contains diverse user profile data, which is processed into embeddings for user preferences. These embeddings are stored in the **Hopsworks Feature Store**, providing a centralized repository of user data.
 
-**Code Example:** In the model retrieval notebook, the following code fetches the user embeddings from the feature store:
+The user embeddings are processed to include data on **genres, artists, playlists, and release years**. These embeddings are later retrieved for model training and inference.
 
+**Code Example: Retrieving User Embeddings**
 ```python
 user_embeddings_fg = fs.get_feature_group(
     name='spotify_user_embeddings',
@@ -24,152 +25,171 @@ print(f"A total of {len(user_embeddings_df)} user embeddings are available.")
 user_embeddings_df.head()
 ```
 
-This step retrieves the pre-processed embeddings, which are later used for training and recommendations.
+### 2. **Multi-Embedding Model Architecture**
 
+The new recommendation model employs a **multi-embedding deep learning architecture** built with **PyTorch**. The system processes **three distinct embeddings**—genre, artist, and playlist embeddings—independently through separate towers, followed by a **joint tower** to compute a unified user embedding.
 
-### 2. **Two-Tower Architecture for Model Training and Retrieval**
+The final embeddings are compared using **cosine similarity** to generate user recommendations.
 
-The heart of this project is the **two-tower architecture**, a widely-used model for recommendation systems. The architecture involves two separate towers (models):
-
-- One tower represents the **user profile**.
-- The other tower represents the **candidate users** to recommend.
-
-The output of both towers is compared using **cosine similarity** to find the most similar users. The two towers are connected via a **cosine similarity layer** that computes the similarity score between user embeddings.
-
-**Code Example:** The user and candidate towers are built using the Keras library in TensorFlow. Below is an example of how the two towers are constructed:
-
+**Code Example: Multi-Embedding Architecture**
 ```python
-def build_user_tower(input_dim, embedding_dim=128):
-    inputs = layers.Input(shape=(input_dim,))
-    x = layers.Dense(256, activation='relu')(inputs)
-    x = layers.Dropout(0.2)(x)
-    x = layers.Dense(128, activation='relu')(x)
-    user_embedding = layers.Dense(embedding_dim, activation=None)(x)  # Final user embedding
-    return Model(inputs, user_embedding, name="UserTower")
+class Tower(nn.Module):
+    def __init__(self, input_dim, output_dim):
+        super(Tower, self).__init__()
+        self.fc = nn.Sequential(
+            nn.Linear(input_dim, 128),
+            nn.ReLU(),
+            nn.Linear(128, output_dim)
+        )
 
-def build_candidate_tower(input_dim, embedding_dim=128):
-    inputs = layers.Input(shape=(input_dim,))
-    x = layers.Dense(256, activation='relu')(inputs)
-    x = layers.Dropout(0.2)(x)
-    x = layers.Dense(128, activation='relu')(x)
-    candidate_embedding = layers.Dense(embedding_dim, activation=None)(x)  # Final candidate embedding
-    return Model(inputs, candidate_embedding, name="CandidateTower")
+    def forward(self, x):
+        return self.fc(x)
+
+class TwoTowerModel(nn.Module):
+    def __init__(self, embedding_dim, output_dim):
+        super(TwoTowerModel, self).__init__()
+        self.genre_fc = Tower(input_dim=embedding_dim, output_dim=output_dim)
+        self.artist_fc = Tower(input_dim=embedding_dim, output_dim=output_dim)
+        self.playlist_fc = Tower(input_dim=embedding_dim, output_dim=output_dim)
+        self.fc_merge = nn.Sequential(
+            nn.Linear(output_dim * 3, 128),
+            nn.ReLU(),
+            nn.Linear(128, output_dim)
+        )
+
+    def forward(self, genre, artist, playlist):
+        genre_embed = self.genre_fc(genre)
+        artist_embed = self.artist_fc(artist)
+        playlist_embed = self.playlist_fc(playlist)
+        combined = torch.cat([genre_embed, artist_embed, playlist_embed], dim=-1)
+        return self.fc_merge(combined)
 ```
 
-This structure allows the model to process embeddings for users and candidates independently before comparing them through similarity metrics.
+This modular architecture allows for independent processing of different embedding types and a seamless combination for final recommendation tasks.
 
+### 3. **Training and Loss Function**
 
-### 3. **Automated Retraining and Continuous Model Updates**
+The system uses a **CosineEmbeddingLoss** function to train the model. Positive and negative user pairs are generated dynamically during training. A margin-based loss is optimized to improve the similarity computation of user embeddings.
 
-To ensure the model adapts to new user data, it is designed to be **retrained automatically every week** using **GitHub Actions**. This automated retraining pipeline ensures that the system remains up-to-date with the latest user embeddings and improves over time based on new interactions.
-
-For this, the **model training notebook** generates pairs of embeddings and labels, which are then used to train the two-tower model. The training is done periodically to keep the model updated with the latest data.
-
-**Code Example:** Here’s a portion of the code where we generate pairs of user embeddings to train the model:
-
+**Code Example: Loss Function and Training Loop**
 ```python
-def generate_pairs(embeddings, similarity_threshold=0.8, negative_ratio=1):
-    pairs = []
-    labels = []
+criterion = nn.CosineEmbeddingLoss()
+optimizer = torch.optim.Adam(model.parameters(), lr=1e-4, weight_decay=1e-5)
 
-    # Compute cosine similarity for all pairs
-    similarity_matrix = cosine_similarity(embeddings)  # This is a valid pairwise similarity matrix
+for epoch in range(100):
+    total_loss = 0
+    for user_ids, genres, artists, playlists in train_loader:
+        genres = torch.tensor(genres.tolist(), dtype=torch.float32)
+        artists = torch.tensor(artists.tolist(), dtype=torch.float32)
+        playlists = torch.tensor(playlists.tolist(), dtype=torch.float32)
 
-    for i in range(len(embeddings)):
-        for j in range(i + 1, len(embeddings)):
-            if similarity_matrix[i, j] > similarity_threshold:
-                # Positive pair
-                pairs.append((embeddings[i], embeddings[j]))
-                labels.append(1)
+        # Generate negative samples
+        neg_genres, neg_artists, neg_playlists = negative_sample(len(genres), df)
 
-                # Generate negative pairs
-                for _ in range(negative_ratio):
-                    negative_index = np.random.choice(len(embeddings))
-                    while negative_index == i or negative_index == j:
-                        negative_index = np.random.choice(len(embeddings))
-                    pairs.append((embeddings[i], embeddings[negative_index]))
-                    labels.append(0)
-    
-    return np.array(pairs), np.array(labels)
+        positive_embed = model(genres, artists, playlists)
+        negative_embed = model(neg_genres, neg_artists, neg_playlists)
+
+        labels = torch.ones(positive_embed.size(0))
+        loss = criterion(positive_embed, negative_embed, labels)
+
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+
+        total_loss += loss.item()
+    print(f"Epoch {epoch + 1}, Loss: {total_loss}")
 ```
 
-These pairs are used for **training the model**, where the goal is to minimize the loss based on the cosine similarity between pairs of embeddings.
-
+This setup ensures that the model learns robust embeddings for user profiles, improving recommendation accuracy.
 
 ### 4. **Dynamic User Integration into the Feature Store**
 
-One of the most crucial features of this project is its **dynamic nature**. When a user performs a recommendation search via the **Gradio app**, their profile is not only used for generating recommendations, but it is also **added to the Feature Store**. This ensures that the system continuously improves as more data is gathered from user interactions, making the database dynamic and allowing for more accurate and personalized recommendations.
+The system is designed to be **dynamic**: when a new user interacts with the **Gradio app**, their profile is processed, and embeddings are generated using their Spotify data. These embeddings are then **added to the Hopsworks Feature Store**.
 
-When a new user profile is added, the system performs the following steps:
+This process enables the system to grow and improve continuously, as new data contributes to both the **recommendation model** and the **feature database**.
 
-1. It generates embeddings for the user's profile using their playlist data.
-2. It normalizes and stores the user's embedding in the Feature Store.
-
-**Code Example:** Here’s how the user embedding is generated and added to the Feature Store:
-
+**Code Example: Adding User Embeddings to Feature Store**
 ```python
-def generate_user_embedding(user_playlists, transformer_model, top_artist_count, playlists_count):
-    # Embedding generation code here...
-    user_embedding_dict = {
-        "user_id": user_id,
-        "genre_embedding": genre_embedding.tolist(),
-        "artist_embedding": artist_embedding.tolist(),
-        "playlist_embedding": playlist_embedding.tolist(),
-        "release_year_embedding": release_year_embedding.tolist()
-    }
-    user_embedding_df = pd.DataFrame([user_embedding_dict])  # Create a DataFrame with a single row
+user_embedding_dict = {
+    "user_id": user_id,
+    "genre_embedding": genre_embedding.tolist(),
+    "artist_embedding": artist_embedding.tolist(),
+    "playlist_embedding": playlist_embedding.tolist(),
+}
+user_embedding_df = pd.DataFrame([user_embedding_dict])
 
-    # Insert into the feature store
-    feature_store = project.get_feature_store()
-    feature_group = feature_store.get_feature_group(name="spotify_user_embeddings", version=2)
-    feature_group.insert(user_embedding_df)
-    print(f"User embedding for {user_id} added to Hopsworks successfully.")
+feature_store = project.get_feature_store()
+feature_group = feature_store.get_feature_group(name="spotify_user_embeddings", version=2)
+feature_group.insert(user_embedding_df)
+print(f"User embedding for {user_id} added successfully.")
 ```
 
-This functionality allows the system to grow and adapt as users continue interacting with the platform.
+### 5. **Interactive Gradio Web App**
 
+The **Gradio web app** provides a simple and intuitive interface for users to generate recommendations. Users input their **Spotify profile URL**, and the system computes recommendations based on playlists, genres, and artists.
 
-### 5. **Gradio Web App for User Interaction**
-
-The **Gradio web interface** is where users interact with the recommendation system. Users input their **Spotify profile URL**, and the system computes recommendations based on their **playlists, genres, artists**, and other features. The recommendations are then displayed on the web interface, showing the **most similar users** along with their profile pictures, names, and similarity scores.
-
-The app is deployed on **Hugging Face Spaces**, and users can access it directly via the following link:  
+The app is hosted on **Hugging Face Spaces** for easy accessibility:  
 [Spotify Profile Recommender - Gradio App](https://huggingface.co/spaces/minifixio/ID2223-final-project)
 
-**Code Example:** Here’s the Gradio interface setup that allows users to input their data and get recommendations:
-
+**Code Example: Gradio App Integration**
 ```python
 interface = gr.Interface(
     fn=recommend_users,
     inputs=[
-        gr.Textbox(label="Spotify Profile URL"),  # For the user's Spotify URL
-        gr.Slider(minimum=1, maximum=10, step=1, value=5, label="Top Artist Count"),  # For top artist count
-        gr.Slider(minimum=1, maximum=20, step=1, value=5, label="Playlists Count")  # For playlists count
+        gr.Textbox(label="Spotify Profile URL"),
+        gr.Slider(minimum=1, maximum=10, step=1, value=5, label="Top Artist Count"),
+        gr.Slider(minimum=1, maximum=20, step=1, value=5, label="Playlists Count")
     ],
     outputs=gr.HTML(label="Recommended Spotify Profiles"),
     title="Spotify Profile Recommender",
-    description="Enter your Spotify profile URL to find the most similar users based on your playlists!"
+    description="Enter your Spotify profile URL to find similar users based on your playlists!"
 )
 interface.launch()
 ```
 
-This allows users to easily enter their profile URL, and in return, they receive a list of recommended profiles with detailed information.
+### 6. **Model Saving and Deployment**
+
+The trained model is saved as a **Torch model** and registered in the **Hopsworks Model Registry**, enabling efficient version control and future retraining.
+
+**Code Example: Saving and Registering Model**
+```python
+torch.save({
+    'model_state_dict': model.state_dict(),
+    'embedding_dim': embedding_dim,
+    'output_dim': output_dim,
+}, os.path.join(model_dir, 'two_tower_model_torch.pth'))
+
+torch_model = mr.torch.create_model(
+    name="two_tower_model_torch",
+    metrics={'final_loss': total_loss},
+    description="Two-tower model for music recommendations",
+    version=1,
+)
+
+torch_model.save(model_dir)
+```
+
+### 7. **Automated Model Training with GitHub Actions**
+
+The training process is fully automated using **GitHub Actions**, ensuring the model is retrained weekly or on-demand. This workflow fetches the latest data from the **Hopsworks Feature Store**, trains the two-tower recommendation model, and updates the **Hopsworks Model Registry**.
+
+#### Key Workflow Steps
+1. **Weekly Schedule**: A CRON job retrains the model every Sunday at midnight (UTC).
+2. **Manual Trigger**: The `workflow_dispatch` event allows on-demand runs.
+3. **Execution**: The script (`2-retrieval_model_training.py`) retrieves embeddings, trains the model, and registers it in Hopsworks.
+4. **Secure Access**: The Hopsworks API key is securely managed via GitHub Secrets.
+
+This automation ensures consistent updates, minimizes manual intervention, and keeps recommendations accurate and up-to-date.
 
 
-## Key Features and Workflow:
-
-- **Dynamic Feature Store**: New user embeddings are continuously added as users interact with the system, making the database dynamic and always up to date.
-- **Two-Tower Model**: Uses a deep learning architecture to compute similarities between users and recommend the most relevant profiles based on cosine similarity.
-- **Automated Retraining**: Model is retrained automatically every week using GitHub Actions to incorporate the latest user data into the model.
-- **Interactive Web Interface**: Gradio web app provides an intuitive, user-friendly interface for making personalized Spotify recommendations.
+## Key Features and Workflow
+- **Dynamic Feature Store**: Continuously updated user embeddings ensure the system adapts to new data.
+- **Multi-Embedding Model**: Processes genre, artist, and playlist embeddings independently for high accuracy.
+- **Cosine-Based Similarity**: Leverages cosine similarity to find the most similar user embeddings.
+- **Interactive Web Interface**: Gradio app offers a user-friendly platform for generating personalized recommendations.
+- **Automated Model Updates**: Integration with Hopsworks allows for seamless retraining and deployment.
 
 # References
-- https://slides.com/kirillkasjanov/recommender-systems#/3/6
-- https://www.youtube.com/watch?v=9vBRjGgdyTY&t=834s
-- https://www.youtube.com/watch?v=o-pZk5R0TZg
-- https://www.youtube.com/watch?v=7_E4wnZGJKo
-- https://medium.com/codex/similarity-search-of-spotify-songs-using-gcp-vector-search-vertex-ai-python-sdk-in-15-minutes-621573cd7b19
-- https://www.hopsworks.ai/dictionary/two-tower-embedding-model
-- https://cloud.google.com/blog/products/ai-machine-learning/scaling-deep-retrieval-tensorflow-two-towers-architecture
-- https://github.com/decodingml/personalized-recommender-course
-- https://github.com/kirajano/two_tower_recommenders
+- [Two-Tower Architecture by Google Cloud](https://cloud.google.com/blog/products/ai-machine-learning/scaling-deep-retrieval-tensorflow-two-towers-architecture)
+- [Hopsworks Feature Store Documentation](https://www.hopsworks.ai/documentation/)
+- [Gradio for Interactive AI](https://gradio.app/)

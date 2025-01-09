@@ -1,20 +1,17 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[78]:
+# In[38]:
 
-
-from sklearn.preprocessing import normalize
-import tensorflow as tf
-from tensorflow.keras import layers, Model
-from sklearn.metrics.pairwise import cosine_similarity
-import random
 import numpy as np
 import hopsworks
 import os
+import torch
+from torch.utils.data import Dataset, DataLoader
+import torch.nn as nn
 
 
-# In[81]:
+# In[39]:
 
 
 if os.getenv('HOPSWORKS_API_KEY') is not None:
@@ -24,14 +21,14 @@ else:
         HOPSWORKS_API_KEY = file.readline().strip()
 
 
-# In[63]:
+# In[40]:
 
 
 project = hopsworks.login(api_key_value=HOPSWORKS_API_KEY)
 fs = project.get_feature_store() 
 
 
-# In[67]:
+# In[41]:
 
 
 user_embeddings_fg = fs.get_feature_group(
@@ -44,126 +41,211 @@ print(f"A total of {len(user_embeddings_df)} user embeddings are available.")
 user_embeddings_df.head()
 
 
-# In[68]:
+# In[43]:
 
 
-user_embeddings_df['full_embedding'] = user_embeddings_df.apply(
-    lambda row: np.concatenate(
-        [row['genre_embedding'], row['artist_embedding'], row['playlist_embedding'], row['release_year_embedding']]
-    ),
-    axis=1
+user_embeddings_df['genre_embedding'] = user_embeddings_df['genre_embedding'].apply(
+    lambda x: torch.tensor(x, dtype=torch.float)
 )
-normalized_embeddings = normalize(np.array(user_embeddings_df['full_embedding'].tolist()))
-user_embeddings_df['normalized_embedding'] = normalized_embeddings.tolist()
-user_embeddings_df.head()
-
-
-# In[69]:
-
-
-def build_user_tower(input_dim, embedding_dim=128):
-    inputs = layers.Input(shape=(input_dim,))
-    x = layers.Dense(256, activation='relu')(inputs)
-    x = layers.Dropout(0.2)(x)
-    x = layers.Dense(128, activation='relu')(x)
-    user_embedding = layers.Dense(embedding_dim, activation=None)(x)  # Final user embedding
-    return Model(inputs, user_embedding, name="UserTower")
-
-def build_candidate_tower(input_dim, embedding_dim=128):
-    inputs = layers.Input(shape=(input_dim,))
-    x = layers.Dense(256, activation='relu')(inputs)
-    x = layers.Dropout(0.2)(x)
-    x = layers.Dense(128, activation='relu')(x)
-    candidate_embedding = layers.Dense(embedding_dim, activation=None)(x)  # Final candidate embedding
-    return Model(inputs, candidate_embedding, name="CandidateTower")
-
-
-# In[70]:
-
-
-# Instantiate towers
-input_dim = len(normalized_embeddings[0])  # Dimensionality of the concatenated embedding
-embedding_dim = 128
-
-user_tower = build_user_tower(input_dim, embedding_dim)
-candidate_tower = build_candidate_tower(input_dim, embedding_dim)
-
-# Compute cosine similarity
-user_embedding = user_tower.output
-candidate_embedding = candidate_tower.output
-cosine_similarity_model = tf.keras.layers.Dot(axes=1, normalize=True)([user_embedding, candidate_embedding])
-
-# Final model
-model = tf.keras.Model(inputs=[user_tower.input, candidate_tower.input], outputs=cosine_similarity_model)
-
-model.compile(
-    optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
-    loss=tf.keras.losses.BinaryCrossentropy(from_logits=False),
-    metrics=['accuracy']
+user_embeddings_df['artist_embedding'] = user_embeddings_df['artist_embedding'].apply(
+    lambda x: torch.tensor(x, dtype=torch.float)
 )
+user_embeddings_df['playlist_embedding'] = user_embeddings_df['playlist_embedding'].apply(
+    lambda x: torch.tensor(x, dtype=torch.float)
+)
+user_embeddings_df['release_year_embedding'] = user_embeddings_df['release_year_embedding'].apply(lambda x: torch.tensor([x], dtype=torch.float))
 
 
-# In[71]:
+# In[44]:
 
 
-def generate_pairs(embeddings, similarity_threshold=0.8, negative_ratio=1):
-    pairs = []
-    labels = []
+class EmbeddingDataset(Dataset):
+    def __init__(self, dataframe):
+        self.data = dataframe
 
-    # Compute cosine similarity for all pairs
-    similarity_matrix = cosine_similarity(embeddings)  # This is a valid pairwise similarity matrix
+    def __len__(self):
+        return len(self.data)
 
-    for i in range(len(embeddings)):
-        for j in range(i + 1, len(embeddings)):
-            if similarity_matrix[i, j] > similarity_threshold:
-                # Positive pair
-                pairs.append((embeddings[i], embeddings[j]))
-                labels.append(1)
+    def __getitem__(self, idx):
+        user_id = self.data.iloc[idx]['user_id']
+        genre_embedding = self.data.iloc[idx]['genre_embedding']
+        artist_embedding = self.data.iloc[idx]['artist_embedding']
+        playlist_embedding = self.data.iloc[idx]['playlist_embedding']
+        return user_id, genre_embedding, artist_embedding, playlist_embedding
 
-                # Generate negative pairs
-                for _ in range(negative_ratio):
-                    negative_index = np.random.choice(len(embeddings))
-                    while negative_index == i or negative_index == j:
-                        negative_index = np.random.choice(len(embeddings))
-                    pairs.append((embeddings[i], embeddings[negative_index]))
-                    labels.append(0)
+
+class Tower(nn.Module):
+    def __init__(self, input_dim, output_dim):
+        super(Tower, self).__init__()
+        self.fc = nn.Sequential(
+            nn.Linear(input_dim, 128),
+            nn.ReLU(),
+            nn.Linear(128, output_dim)
+        )
+
+    def forward(self, x):
+        return self.fc(x)
+
+class TwoTowerModel(nn.Module):
+    def __init__(self, embedding_dim, output_dim):
+        super(TwoTowerModel, self).__init__()
+        # Separate processing for each embedding type
+        self.genre_fc = Tower(input_dim=embedding_dim, output_dim=output_dim)
+        self.artist_fc = Tower(input_dim=embedding_dim, output_dim=output_dim)
+        self.playlist_fc = Tower(input_dim=embedding_dim, output_dim=output_dim)
+        
+        # Joint Tower for final embedding
+        self.fc_merge = nn.Sequential(
+            nn.Linear(output_dim * 3, 128),
+            nn.ReLU(),
+            nn.Linear(128, output_dim)
+        )
+        
+    def forward(self, genre, artist, playlist):
+        genre_embed = self.genre_fc(genre)
+        artist_embed = self.artist_fc(artist)
+        playlist_embed = self.playlist_fc(playlist)
+        
+        # Concatenate embeddings and pass through final layers
+        combined = torch.cat([genre_embed, artist_embed, playlist_embed], dim=-1)
+        final_embed = self.fc_merge(combined)
+        return final_embed
+
+    def compute_similarity(self, query_embedding, database_embedding):
+        # Cosine similarity for comparison
+        return torch.nn.functional.cosine_similarity(query_embedding, database_embedding)
+
+
+
+# In[45]:
+
+
+# Initialize model
+df = user_embeddings_df
+print(df['genre_embedding'][0].shape)
+embedding_dim = len(df['genre_embedding'][0])  # Assuming all embeddings have the same dimension
+output_dim = 64
+margin = 0.5
+
+model = TwoTowerModel(embedding_dim=embedding_dim, output_dim=output_dim)
+criterion = nn.CosineEmbeddingLoss()
+optimizer = torch.optim.Adam(model.parameters(), lr=1/10e9, weight_decay=1e-5)
+
+# Prepare dataset and dataloader
+train_dataset = EmbeddingDataset(df)
+train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
+
+# Dummy negative sampling (replace with actual negatives)
+def negative_sample(batch_size, df):
+    # Randomly sample other embeddings as negatives
+    sampled = df.sample(batch_size)  # Ensure the sample size matches the batch size
+    return torch.stack(sampled['genre_embedding'].tolist()), \
+           torch.stack(sampled['artist_embedding'].tolist()), \
+           torch.stack(sampled['playlist_embedding'].tolist())
+
+
+# Training loop
+for epoch in range(100):
+    total_loss = 0
+    for user_ids, genres, artists, playlists in train_loader:
+        # Ensure embeddings are converted to tensors
+        genres = torch.tensor(genres.tolist(), dtype=torch.float32)
+        artists = torch.tensor(artists.tolist(), dtype=torch.float32)
+        playlists = torch.tensor(playlists.tolist(), dtype=torch.float32)
+        
+        # Generate negative samples
+        neg_genres, neg_artists, neg_playlists = negative_sample(len(genres), df)
+        
+        # Forward pass for positives and negatives
+        positive_embed = model(genres, artists, playlists)
+        negative_embed = model(neg_genres, neg_artists, neg_playlists)
+        
+        # Create labels for the current batch size
+        labels = torch.ones(positive_embed.size(0))
+        
+        # Calculate loss - note we're using just one pair of embeddings and their labels
+        loss = criterion(positive_embed, negative_embed, labels)
+        
+        # Backward pass
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+        
+        total_loss += loss.item()
     
-    return np.array(pairs), np.array(labels)
+    print(f"Epoch {epoch + 1}, Loss: {total_loss}")
 
 
-# In[72]:
+# In[50]:
 
 
-# Generate training data
-pairs, labels = generate_pairs(normalized_embeddings)
-user_1 = np.array([pair[0] for pair in pairs])
-user_2 = np.array([pair[1] for pair in pairs])
+def find_similar_embedding(query_genre, query_artist, query_playlist, database, model, top_k=5):
+    model.eval()
+    with torch.no_grad():
+        query_embedding = model(query_genre.unsqueeze(0), query_artist.unsqueeze(0), query_playlist.unsqueeze(0))
+        
+        # Compute embeddings for all database entries
+        db_genres = torch.stack(database['genre_embedding'].tolist())
+        db_artists = torch.stack(database['artist_embedding'].tolist())
+        db_playlists = torch.stack(database['playlist_embedding'].tolist())
+        db_embeddings = model(db_genres, db_artists, db_playlists)
+        
+        # Compute similarities
+        similarities = torch.nn.functional.cosine_similarity(query_embedding, db_embeddings)
+        top_k_indices = torch.topk(similarities, k=top_k).indices
+        return top_k_indices, similarities[top_k_indices]
 
-history = model.fit(
-    [user_1, user_2],  # Input: pairs of user embeddings
-    labels,            # Output: similarity labels
-    batch_size=32,
-    epochs=10,
-    validation_split=0.2
-)
+# Example usage
+index_to_query = 5
+query_genre = df['genre_embedding'][index_to_query]
+query_artist = df['artist_embedding'][index_to_query]
+query_playlist = df['playlist_embedding'][index_to_query]
+
+top_k_indices, scores = find_similar_embedding(query_genre, query_artist, query_playlist, df, model)
+# Remove index_to_query from the top_k_indices and also remove its score
+index_to_query_index = np.where(top_k_indices == index_to_query)[0][0]
+top_k_indices = np.delete(top_k_indices, index_to_query_index)
+scores = np.delete(scores, index_to_query_index)
+
+print("Top K Similar Embeddings:", top_k_indices)
+print("Similarity Scores:", scores)
 
 
-# In[77]:
+# In[47]:
 
 
+model_dir = "torch_model"
+os.makedirs(model_dir, exist_ok=True)
+
+# Save the model and metadata
+torch.save({
+    'model_state_dict': model.state_dict(),
+    'embedding_dim': embedding_dim,
+    'output_dim': output_dim,
+}, os.path.join(model_dir, 'two_tower_model_torch.pth'))
+
+
+# In[48]:
+
+
+# Get the model registry handle
 mr = project.get_model_registry()
-model.save("two_tower_model.keras", save_format="tf")
+model_registry = mr.get_model("two_tower_model_torch", version=1) 
+model_registry.delete()
 
-# Create a new model version
-model_dir = "two_tower_model.keras"
-model_name = "two_tower_recommender"
-
-model_registry = mr.python.create_model(
-    name=model_name,
-    metrics={"accuracy": history.history["accuracy"][-1]},  # Log the final accuracy
-    description="Two-Tower Recommender Model for User Similarity",
+# Create the model metadata object
+torch_model = mr.torch.create_model(
+    name="two_tower_model_torch",
+    metrics={'final_loss': total_loss},  # You can add your training metrics here
+    description="Two-tower model for music recommendations",
+    version=1,
+    input_example={
+        'genre_embedding': genres[0].numpy().tolist(),
+        'artist_embedding': artists[0].numpy().tolist(),
+        'playlist_embedding': playlists[0].numpy().tolist()
+    }
 )
 
-model_registry.save(model_dir)
-print(f"Model '{model_name}' uploaded to Hopsworks!")
+# Save the model to the registry
+torch_model.save(model_dir)
 

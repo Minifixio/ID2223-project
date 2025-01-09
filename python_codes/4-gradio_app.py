@@ -1,25 +1,27 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[1]:
+# In[ ]:
 
 
-import gradio as gr
-import re
+import os
 import numpy as np
 import pandas as pd
 import tensorflow as tf
+import hopsworks
 import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
-import hopsworks
 from sklearn.preprocessing import normalize
-from sklearn.metrics.pairwise import cosine_similarity
 from collections import Counter
 from sentence_transformers import SentenceTransformer
-from tensorflow.keras.models import Model
+import torch.nn as nn
+from torch.utils.data import Dataset, DataLoader
+import torch
+import re
+import gradio as gr
 
 
-# In[2]:
+# In[34]:
 
 
 # Load credentials
@@ -33,14 +35,14 @@ with open('../secrets/spotify_client_secret.txt', 'r') as file:
     SPOTIFY_CLIENT_SECRET = file.readline().strip()
 
 
-# In[3]:
+# In[35]:
 
 
 client_credentials_manager = SpotifyClientCredentials(client_id=SPOTIFY_CLIENT_ID, client_secret=SPOTIFY_CLIENT_SECRET)
 sp = spotipy.Spotify(client_credentials_manager=client_credentials_manager)
 
 
-# In[4]:
+# In[36]:
 
 
 # Connect to Hopsworks
@@ -48,26 +50,97 @@ project = hopsworks.login(api_key_value=HOPSWORKS_API_KEY)
 fs = project.get_feature_store()
 
 
-# In[5]:
+# In[37]:
 
 
-# Retrieve the Keras model from the model registry
+class EmbeddingDataset(Dataset):
+    def __init__(self, dataframe):
+        self.data = dataframe
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        user_id = self.data.iloc[idx]['user_id']
+        genre_embedding = self.data.iloc[idx]['genre_embedding']
+        artist_embedding = self.data.iloc[idx]['artist_embedding']
+        playlist_embedding = self.data.iloc[idx]['playlist_embedding']
+        return user_id, genre_embedding, artist_embedding, playlist_embedding
+
+class Tower(nn.Module):
+    def __init__(self, input_dim, output_dim):
+        super(Tower, self).__init__()
+        self.fc = nn.Sequential(
+            nn.Linear(input_dim, 128),
+            nn.ReLU(),
+            nn.Linear(128, output_dim)
+        )
+
+    def forward(self, x):
+        return self.fc(x)
+
+class TwoTowerModel(nn.Module):
+    def __init__(self, embedding_dim, output_dim):
+        super(TwoTowerModel, self).__init__()
+        # Separate processing for each embedding type
+        self.genre_fc = Tower(input_dim=embedding_dim, output_dim=output_dim)
+        self.artist_fc = Tower(input_dim=embedding_dim, output_dim=output_dim)
+        self.playlist_fc = Tower(input_dim=embedding_dim, output_dim=output_dim)
+        
+        # Joint Tower for final embedding
+        self.fc_merge = nn.Sequential(
+            nn.Linear(output_dim * 3, 128),
+            nn.ReLU(),
+            nn.Linear(128, output_dim)
+        )
+        
+    def forward(self, genre, artist, playlist):
+        genre_embed = self.genre_fc(genre)
+        artist_embed = self.artist_fc(artist)
+        playlist_embed = self.playlist_fc(playlist)
+        
+        # Concatenate embeddings and pass through final layers
+        combined = torch.cat([genre_embed, artist_embed, playlist_embed], dim=-1)
+        final_embed = self.fc_merge(combined)
+        return final_embed
+
+    def compute_similarity(self, query_embedding, database_embedding):
+        # Cosine similarity for comparison
+        return torch.nn.functional.cosine_similarity(query_embedding, database_embedding)
+
+
+# In[38]:
+
+
 mr = project.get_model_registry()
-model_registry = mr.get_model("two_tower_recommender", version=1)
+
+# Retrieve the PyTorch model from the model registry
+model_registry = mr.get_model("two_tower_model_torch", version=1)  # Adjust version as needed
 model_file_path = model_registry.download()
-model = tf.keras.models.load_model(
-    model_file_path + '/two_tower_model.keras',
-    custom_objects={"Model": Model}
+
+# Load the model
+checkpoint = torch.load(os.path.join(model_file_path, 'two_tower_model_torch.pth'))
+
+# Recreate the model architecture
+model = TwoTowerModel(
+    embedding_dim=checkpoint['embedding_dim'],
+    output_dim=checkpoint['output_dim']
 )
 
+# Load the state dict
+model.load_state_dict(checkpoint['model_state_dict'])
+model.eval()  # Set to evaluation mode
 
-# In[6]:
+print("Model loaded successfully!")
+
+
+# In[39]:
 
 
 transformer_model = SentenceTransformer('paraphrase-MiniLM-L6-v2')  # This can be replaced if needed
 
 
-# In[7]:
+# In[41]:
 
 
 def generate_user_embedding(user_playlists, transformer_model, top_artist_count, playlists_count):
@@ -174,16 +247,10 @@ def generate_user_embedding(user_playlists, transformer_model, top_artist_count,
     # Release year embedding
     release_year_embedding = np.array([np.mean(all_release_years)]) if all_release_years else np.zeros(1)
 
-    # print("User embedding generated successfully!")
-    # print("Genre embedding shape:", genre_embedding.shape)
-    # print("Artist embedding shape:", artist_embedding.shape)
-    # print("Playlist embedding shape:", playlist_embedding.shape)
-    # print("Release year embedding shape:", release_year_embedding.shape)
-
     return genre_embedding, artist_embedding, playlist_embedding, release_year_embedding
 
 
-# In[8]:
+# In[42]:
 
 
 def extract_user_id(spotify_url):
@@ -194,7 +261,55 @@ def extract_user_id(spotify_url):
     return None
 
 
-# In[ ]:
+# In[43]:
+
+
+def get_best_matching_users(user_id, user_embeddings_df, transformer_model, top_artist_count, playlists_count, top_k):
+    # Fetch user playlists
+    playlists = sp.user_playlists(user_id)["items"]
+    if not playlists:
+        print(f"No playlists found for user {user_id}")
+        return None
+
+    # Generate the user's embedding
+    genre_embedding, artist_embedding, playlist_embedding, release_year_embedding = generate_user_embedding(
+        playlists, transformer_model, top_artist_count, playlists_count
+    )
+
+    # Convert to PyTorch tensors
+    genre_embedding = torch.tensor(genre_embedding, dtype=torch.float)
+    artist_embedding = torch.tensor(artist_embedding, dtype=torch.float)
+    playlist_embedding = torch.tensor(playlist_embedding, dtype=torch.float)
+
+    print("User embeddings generated successfully!")
+
+    model.eval()
+    top_k_indices = []
+    with torch.no_grad():
+        query_embedding = model(genre_embedding.unsqueeze(0), artist_embedding.unsqueeze(0), playlist_embedding.unsqueeze(0))
+        
+        # Compute embeddings for all database entries
+        db_genres = torch.stack(user_embeddings_df['genre_embedding'].tolist())
+        db_artists = torch.stack(user_embeddings_df['artist_embedding'].tolist())
+        db_playlists = torch.stack(user_embeddings_df['playlist_embedding'].tolist())
+        db_embeddings = model(db_genres, db_artists, db_playlists)
+        
+        # Compute similarities
+        similarities = torch.nn.functional.cosine_similarity(query_embedding, db_embeddings)
+        top_k_indices = torch.topk(similarities, k=top_k+1).indices
+        top_k_indices, similarities[top_k_indices]
+        scores = similarities[top_k_indices]
+
+        # Find user_id ID in the dataset and remove it from the top_k_indices
+        user_index = user_embeddings_df[user_embeddings_df['user_id'] == user_id].index[0]
+        index_to_delete = np.where(top_k_indices == user_index)[0][0]
+        top_k_indices = np.delete(top_k_indices, index_to_delete)
+        scores = np.delete(scores, index_to_delete)
+
+    return user_embeddings_df.iloc[top_k_indices], scores
+
+
+# In[47]:
 
 
 def recommend_users(spotify_url, top_artist_count, playlists_count, progress=gr.Progress(track_tqdm=True)):
@@ -207,7 +322,7 @@ def recommend_users(spotify_url, top_artist_count, playlists_count, progress=gr.
         progress(0, desc="Gathering profile data")
         print("Gathering profile data...")
         playlists = sp.user_playlists(user_id)["items"]
-        print(playlists)
+        
         if not playlists:
             return f"No playlists found for user {user_id}."
 
@@ -218,9 +333,6 @@ def recommend_users(spotify_url, top_artist_count, playlists_count, progress=gr.
         genre_embedding, artist_embedding, playlist_embedding, release_year_embedding = generate_user_embedding(
             playlists, transformer_model, top_artist_count, playlists_count
         )
-
-        user_embedding_concat = np.concatenate([genre_embedding, artist_embedding, playlist_embedding, release_year_embedding])
-        user_embedding_normalized = normalize(user_embedding_concat.reshape(1, -1))
 
         # Add the user's embedding to Hopsworks
         print("Adding the user's embedding to Hopsworks...")
@@ -241,42 +353,36 @@ def recommend_users(spotify_url, top_artist_count, playlists_count, progress=gr.
 
         # Get all user embeddings from the database (assuming these are already stored in the feature store)
         user_embeddings_fg = fs.get_feature_group(name="spotify_user_embeddings", version=2)
-        all_user_embeddings = user_embeddings_fg.read()
+        user_embeddings_df = user_embeddings_fg.read()
 
         # Exclude the current user from the dataset
-        all_user_embeddings = all_user_embeddings[all_user_embeddings["user_id"] != user_id]
+        user_embeddings_df = user_embeddings_df[user_embeddings_df["user_id"] != user_id]
+        user_embeddings_df = user_embeddings_fg.read()
 
-        all_user_embeddings['full_embedding'] = all_user_embeddings.apply(
-            lambda row: np.concatenate(
-                [row['genre_embedding'], row['artist_embedding'], row['playlist_embedding'], row['release_year_embedding']]
-            ),
-            axis=1
+        user_embeddings_df['genre_embedding'] = user_embeddings_df['genre_embedding'].apply(
+            lambda x: torch.tensor(x, dtype=torch.float)
         )
-        normalized_embeddings = normalize(np.array(all_user_embeddings['full_embedding'].tolist()))
-        all_user_embeddings['normalized_embedding'] = normalized_embeddings.tolist()
-        all_user_ids = all_user_embeddings["user_id"].tolist()
-
-        # Normalize all embeddings
-        normalized_user_embeddings = np.array(all_user_embeddings["normalized_embedding"].tolist())
+        user_embeddings_df['artist_embedding'] = user_embeddings_df['artist_embedding'].apply(
+            lambda x: torch.tensor(x, dtype=torch.float)
+        )
+        user_embeddings_df['playlist_embedding'] = user_embeddings_df['playlist_embedding'].apply(
+            lambda x: torch.tensor(x, dtype=torch.float)
+        )
+        user_embeddings_df['release_year_embedding'] = user_embeddings_df['release_year_embedding'].apply(lambda x: torch.tensor([x], dtype=torch.float))
 
         # Compute cosine similarity for all users
-        similarities = cosine_similarity(user_embedding_normalized, normalized_user_embeddings).flatten()
-        print(f"Similarities shape: {similarities.shape}")
-        print(similarities)
+        top_k = 5
+        similar_users, similarity_scores = get_best_matching_users(user_id, user_embeddings_df, transformer_model, top_artist_count, playlists_count, top_k)
 
         # Finding the top matches
         progress(0.9, desc="Finding matches")
-        print("Finding the top matches...")
-        top_indices = np.argsort(similarities)[::-1][:5]
         results = []
-
-        print("Top matches and matched similarities:")
-        print(similarities[top_indices])
         
-        for idx in top_indices:
-            matched_user_id = all_user_ids[idx]
-            matched_similarity = similarities[idx]
-            print(f"User ID: {matched_user_id}, Similarity: {matched_similarity:.2f}")
+        j = 0
+        for i, row in similar_users.iterrows():
+            matched_user_id = row.user_id
+            matched_similarity = similarity_scores[j].item()
+            print(f"User ID: {matched_user_id}, Similarity: {matched_similarity:.5f}")
 
             try:
                 matched_profile = sp.user(matched_user_id)                
@@ -293,6 +399,8 @@ def recommend_users(spotify_url, top_artist_count, playlists_count, progress=gr.
                 })
             except Exception as e:
                 print(f"Error fetching profile: {e}")
+            
+            j += 1
 
         # Formatting results
         progress(0.95, desc="Formatting results")
@@ -314,7 +422,7 @@ def recommend_users(spotify_url, top_artist_count, playlists_count, progress=gr.
         return f"Error processing request: {str(e)}"
 
 
-# In[128]:
+# In[48]:
 
 
 # Create the Gradio UI
@@ -334,7 +442,7 @@ interface = gr.Interface(
 )
 
 
-# In[ ]:
+# In[49]:
 
 
 # Launch the app
