@@ -4,3 +4,4 @@ secrets
 .ipynb_checkpoints/
 notebooks/.gradio/
 notebooks/.ipynb_checkpoints/
+notebooks/old/
