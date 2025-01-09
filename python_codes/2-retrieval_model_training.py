@@ -176,44 +176,6 @@ for epoch in range(100):
     print(f"Epoch {epoch + 1}, Loss: {total_loss}")
 
 
-# In[50]:
-
-
-def find_similar_embedding(query_genre, query_artist, query_playlist, database, model, top_k=5):
-    model.eval()
-    with torch.no_grad():
-        query_embedding = model(query_genre.unsqueeze(0), query_artist.unsqueeze(0), query_playlist.unsqueeze(0))
-        
-        # Compute embeddings for all database entries
-        db_genres = torch.stack(database['genre_embedding'].tolist())
-        db_artists = torch.stack(database['artist_embedding'].tolist())
-        db_playlists = torch.stack(database['playlist_embedding'].tolist())
-        db_embeddings = model(db_genres, db_artists, db_playlists)
-        
-        # Compute similarities
-        similarities = torch.nn.functional.cosine_similarity(query_embedding, db_embeddings)
-        top_k_indices = torch.topk(similarities, k=top_k).indices
-        return top_k_indices, similarities[top_k_indices]
-
-# Example usage
-index_to_query = 5
-query_genre = df['genre_embedding'][index_to_query]
-query_artist = df['artist_embedding'][index_to_query]
-query_playlist = df['playlist_embedding'][index_to_query]
-
-top_k_indices, scores = find_similar_embedding(query_genre, query_artist, query_playlist, df, model)
-# Remove index_to_query from the top_k_indices and also remove its score
-index_to_query_index = np.where(top_k_indices == index_to_query)[0][0]
-top_k_indices = np.delete(top_k_indices, index_to_query_index)
-scores = np.delete(scores, index_to_query_index)
-
-print("Top K Similar Embeddings:", top_k_indices)
-print("Similarity Scores:", scores)
-
-
-# In[47]:
-
-
 model_dir = "torch_model"
 os.makedirs(model_dir, exist_ok=True)
 
