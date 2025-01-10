@@ -27,6 +27,8 @@ user_embeddings_df.head()
 
 ### 2. **Multi-Embedding Model Architecture**
 
+For a detailed explanation of the architecture and its components, you can refer to the slides we’ve prepared. These slides provide an in-depth overview of the Two-Tower Embedding Model and can be found in the `/documentation/two-tower_embedding_model.pdf` file.
+
 The new recommendation model employs a **multi-embedding deep learning architecture** built with **PyTorch**. The system processes **three distinct embeddings**—genre, artist, and playlist embeddings—independently through separate towers, followed by a **joint tower** to compute a unified user embedding.
 
 The final embeddings are compared using **cosine similarity** to generate user recommendations.
@@ -181,15 +183,28 @@ The training process is fully automated using **GitHub Actions**, ensuring the m
 
 This automation ensures consistent updates, minimizes manual intervention, and keeps recommendations accurate and up-to-date.
 
+## Model Limitations
 
-## Key Features and Workflow
-- **Dynamic Feature Store**: Continuously updated user embeddings ensure the system adapts to new data.
-- **Multi-Embedding Model**: Processes genre, artist, and playlist embeddings independently for high accuracy.
-- **Cosine-Based Similarity**: Leverages cosine similarity to find the most similar user embeddings.
-- **Interactive Web Interface**: Gradio app offers a user-friendly platform for generating personalized recommendations.
-- **Automated Model Updates**: Integration with Hopsworks allows for seamless retraining and deployment.
+While developing this project, several limitations were encountered that impacted the quality and accuracy of the recommendation model:
+
+1. **Spotify API Deprecation**: In December, Spotify deprecated access to its **Audio API** and specific track features, which would have been highly valuable for building more refined user embeddings. This deprecation forced the project to pivot to relying on other features, such as **top artists**, **genres**, and **playlists**, to derive user preferences.
+    
+2. **Spotify API Rate Limits**: The API’s rate limits made it challenging to populate a large and diverse database efficiently. This constraint added complexity to the model training process, as a smaller dataset often hinders the development of a highly accurate model.
+    
+3. **Model Training Challenges**: Due to the limited dataset size and feature diversity, training a robust model became the hardest part of the project. Additional effort was required to tune the architecture and loss functions to compensate for these limitations.
+    
+
 
 # References
 - [Two-Tower Architecture by Google Cloud](https://cloud.google.com/blog/products/ai-machine-learning/scaling-deep-retrieval-tensorflow-two-towers-architecture)
 - [Hopsworks Feature Store Documentation](https://www.hopsworks.ai/documentation/)
 - [Gradio for Interactive AI](https://gradio.app/)
+- [Recommender Systems Slides](https://slides.com/kirillkasjanov/recommender-systems#/3/6)  
+- [YouTube: Introduction to Two-Tower Models (Part 1)](https://www.youtube.com/watch?v=9vBRjGgdyTY&t=834s)  
+- [YouTube: Introduction to Two-Tower Models (Part 2)](https://www.youtube.com/watch?v=o-pZk5R0TZg)  
+- [YouTube: Two-Tower Models Simplified](https://www.youtube.com/watch?v=7_E4wnZGJKo)  
+- [Medium: Spotify Song Similarity Search with GCP and Vertex AI](https://medium.com/codex/similarity-search-of-spotify-songs-using-gcp-vector-search-vertex-ai-python-sdk-in-15-minutes-621573cd7b19)  
+- [Hopsworks: Two-Tower Embedding Model Overview](https://www.hopsworks.ai/dictionary/two-tower-embedding-model)  
+- [Google Cloud Blog: Scaling Deep Retrieval with TensorFlow Two-Tower Architecture](https://cloud.google.com/blog/products/ai-machine-learning/scaling-deep-retrieval-tensorflow-two-towers-architecture)  
+- [GitHub: Personalized Recommender Course](https://github.com/decodingml/personalized-recommender-course)  
+- [GitHub: Two-Tower Recommenders Implementation](https://github.com/kirajano/two_tower_recommenders)  
