@@ -9,7 +9,7 @@ This project demonstrates a **dynamic recommendation system** for Spotify users,
 
 ### 1. **Dataset and Feature Store Integration**
 
-The recommendation system uses a **dataset of Spotify profile IDs** sourced from **Hugging Face**. This dataset contains diverse user profile data, which is processed into embeddings for user preferences. These embeddings are stored in the **Hopsworks Feature Store**, providing a centralized repository of user data.
+The recommendation system uses a **dataset of Spotify profile IDs** sourced from **Hugging Face** ([here](https://huggingface.co/datasets/erenfazlioglu/spotifyuserids)). This dataset contains diverse user profile data, which is processed into embeddings for user preferences. These embeddings are stored in the **Hopsworks Feature Store**, providing a centralized repository of user data.
 
 The user embeddings are processed to include data on **genres, artists, playlists, and release years**. These embeddings are later retrieved for model training and inference.
 
